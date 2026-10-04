@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronLeft, ChevronRight, Plus, CheckCircle2, Clock, Github } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Clock } from 'lucide-react';
 import { CalendarEvent, TaskCategoryConfig } from '../types/calendar';
 import { THAI_DAYS, THAI_MONTHS } from '../constants/calendar';
 
@@ -21,9 +21,8 @@ export const CalendarWeek: React.FC<Props> = ({
   onOpenNewEventWithDate,
 }) => {
   const baseDate = new Date(currentDate);
-  const currentDayOfWeek = baseDate.getDay(); // 0 is Sunday
+  const currentDayOfWeek = baseDate.getDay();
 
-  // Compute start of week (Sunday)
   const startOfWeek = new Date(baseDate);
   startOfWeek.setDate(baseDate.getDate() - currentDayOfWeek);
 
@@ -137,16 +136,11 @@ export const CalendarWeek: React.FC<Props> = ({
                             <Clock className="w-2.5 h-2.5" />
                             {event.isAllDay ? 'ทั้งวัน' : event.startTime || '--:--'}
                           </span>
-                          <div className="flex items-center gap-1">
-                            {event.isGithubSynced && (
-                              <Github className="w-2.5 h-2.5 text-slate-800" />
-                            )}
-                            {event.isGoogleSynced && (
-                              <span className="text-[9px] font-bold text-blue-600 bg-white/80 px-1 rounded">
-                                G
-                              </span>
-                            )}
-                          </div>
+                          {event.isGoogleSynced && (
+                            <span className="text-[9px] font-bold text-blue-600 bg-white/80 px-1 rounded">
+                              G
+                            </span>
+                          )}
                         </div>
                         <p className="font-bold truncate leading-tight">
                           {event.title}

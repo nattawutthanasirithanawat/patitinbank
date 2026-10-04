@@ -6,8 +6,7 @@ import {
   CheckCircle2,
   Clock,
   Sparkles,
-  Calendar as CalendarIcon,
-  Github
+  Calendar as CalendarIcon
 } from 'lucide-react';
 import { CalendarEvent, TaskCategoryConfig } from '../types/calendar';
 import { THAI_DAYS_SHORT, THAI_MONTHS } from '../constants/calendar';
@@ -48,14 +47,10 @@ export const CalendarMonth: React.FC<Props> = ({
   const today = new Date();
   const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
-  // First day of current month (0 = Sunday, 1 = Monday...)
   const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay();
-  // Days in current month
   const daysInCurrentMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-  // Days in previous month
   const daysInPrevMonth = new Date(currentYear, currentMonth, 0).getDate();
 
-  // Helper to find category config
   const getCatConfig = (catId: string): TaskCategoryConfig => {
     return (
       categories.find((c) => c.id === catId) || {
@@ -69,18 +64,15 @@ export const CalendarMonth: React.FC<Props> = ({
     );
   };
 
-  // Filter events by selected category
   const filteredEvents = events.filter((e) => {
     if (activeCategoryFilter === 'all') return true;
     return e.category === activeCategoryFilter;
   });
 
-  // Helper to get events for a date
   const getEventsForDate = (dateStr: string) => {
     return filteredEvents.filter((e) => e.date === dateStr);
   };
 
-  // Build grid calendar cells
   interface DayCell {
     dayNum: number;
     dateStr: string;
@@ -91,7 +83,6 @@ export const CalendarMonth: React.FC<Props> = ({
 
   const cells: DayCell[] = [];
 
-  // Previous month trailing days
   for (let i = firstDayOfMonth - 1; i >= 0; i--) {
     const d = daysInPrevMonth - i;
     const prevMonthIdx = currentMonth === 0 ? 11 : currentMonth - 1;
@@ -106,7 +97,6 @@ export const CalendarMonth: React.FC<Props> = ({
     });
   }
 
-  // Current month days
   for (let d = 1; d <= daysInCurrentMonth; d++) {
     const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     cells.push({
@@ -118,7 +108,6 @@ export const CalendarMonth: React.FC<Props> = ({
     });
   }
 
-  // Next month leading days (fill up to 35 or 42)
   const remainingCells = 42 - cells.length;
   for (let d = 1; d <= (remainingCells <= 7 ? remainingCells : remainingCells - 7); d++) {
     const nextMonthIdx = currentMonth === 11 ? 0 : currentMonth + 1;
@@ -139,7 +128,6 @@ export const CalendarMonth: React.FC<Props> = ({
       <div className="p-4 sm:p-5 border-b border-sky-100 bg-gradient-to-r from-sky-50/60 via-blue-50/40 to-white">
         <div className="flex flex-col gap-3">
           
-          {/* Top row: Month controls */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="flex items-center bg-white rounded-2xl border border-sky-200/80 p-1 shadow-xs">
@@ -262,7 +250,6 @@ export const CalendarMonth: React.FC<Props> = ({
                   {cell.dayNum}
                 </span>
 
-                {/* Quick Add Button on hover */}
                 <button
                   type="button"
                   onClick={(e) => {
@@ -294,9 +281,6 @@ export const CalendarMonth: React.FC<Props> = ({
                           : `${cfg.badgeBg}`
                       }`}
                     >
-                      {event.isGithubSynced && (
-                        <Github className="w-2.5 h-2.5 shrink-0 text-slate-800" />
-                      )}
                       {event.isGoogleSynced && (
                         <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" title="Google Calendar" />
                       )}

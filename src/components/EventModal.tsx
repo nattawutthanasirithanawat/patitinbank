@@ -108,9 +108,6 @@ export const EventModal: React.FC<Props> = ({
         isCompleted: initialEvent?.isCompleted ?? false,
         isGoogleSynced: syncToGoogle,
         googleCalendarEventId: initialEvent?.googleCalendarEventId,
-        githubIssueId: initialEvent?.githubIssueId,
-        githubUrl: initialEvent?.githubUrl,
-        isGithubSynced: initialEvent?.isGithubSynced,
       });
       onClose();
     } catch (err: unknown) {

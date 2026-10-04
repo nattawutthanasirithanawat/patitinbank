@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { User } from 'firebase/auth';
 import {
-  Calendar as CalendarIcon,
   LayoutGrid,
   CalendarRange,
   Sparkles,
@@ -10,10 +9,10 @@ import {
   AlertCircle,
   Cloud,
   Clock,
-  Github,
-  Tag
+  Tag,
+  ShieldCheck
 } from 'lucide-react';
-import { CalendarEvent, AppNotification, TaskCategoryConfig, GitHubAccount } from './types/calendar';
+import { CalendarEvent, AppNotification, TaskCategoryConfig } from './types/calendar';
 import {
   DEFAULT_CATEGORIES,
   getTodayStr,
@@ -23,7 +22,6 @@ import {
 import {
   initAuth,
   googleSignIn,
-  logout,
   getAccessToken
 } from './services/firebaseAuth';
 import {
@@ -32,12 +30,6 @@ import {
   updateGoogleCalendarEvent,
   deleteGoogleCalendarEvent
 } from './services/googleCalendar';
-import {
-  getStoredGitHubAccount,
-  saveStoredGitHubAccount,
-  connectGitHubByUsernameOrToken,
-  connectGitHubViaFirebase
-} from './services/githubService';
 import { soundPlayer } from './services/sound';
 import { Header } from './components/Header';
 import { CalendarMonth } from './components/CalendarMonth';
@@ -48,22 +40,20 @@ import { DeleteConfirmModal } from './components/DeleteConfirmModal';
 import { NotificationDrawer } from './components/NotificationDrawer';
 import { ToastNotification } from './components/ToastNotification';
 import { CategoryManagerModal } from './components/CategoryManagerModal';
-import { GitHubModal } from './components/GitHubModal';
 
+// Permanent storage keys to ensure data is never lost ("ห้ามลบข้อมูลออก")
 const STORAGE_KEY_EVENTS = 'bank_fat_calendar_events_v2';
+const STORAGE_KEY_BACKUP = 'bank_fat_calendar_permanent_backup_v2';
 const STORAGE_KEY_NOTIFS = 'bank_fat_calendar_notifs_v2';
 const STORAGE_KEY_CATEGORIES = 'bank_fat_calendar_categories_v2';
+
+export const PERMANENT_GOOGLE_EMAIL = '465125@wsk.ac.th';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isRefreshingGoogle, setIsRefreshingGoogle] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
-
-  // GitHub integration state
-  const [githubAccount, setGithubAccount] = useState<GitHubAccount | null>(() => getStoredGitHubAccount());
-  const [isGitHubModalOpen, setIsGitHubModalOpen] = useState(false);
-  const [isSyncingGitHub, setIsSyncingGitHub] = useState(false);
 
   // Dynamic Categories state
   const [categories, setCategories] = useState<TaskCategoryConfig[]>(() => {
@@ -86,11 +76,16 @@ export default function App() {
   const [currentMonth, setCurrentMonth] = useState<number>(todayDateObj.getMonth());
   const [viewMode, setViewMode] = useState<'month' | 'week'>('month');
 
-  // Events & Notifications
+  // Events & Notifications (loaded from permanent storage)
   const [events, setEvents] = useState<CalendarEvent[]>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY_EVENTS);
-      if (saved) return JSON.parse(saved);
+      const saved = localStorage.getItem(STORAGE_KEY_EVENTS) || localStorage.getItem(STORAGE_KEY_BACKUP);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
     } catch (e) {
       console.error('Failed reading events from storage', e);
     }
@@ -120,12 +115,16 @@ export default function App() {
   const [deleteModalEvent, setDeleteModalEvent] = useState<CalendarEvent | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Save to localStorage
+  // Permanent Storage Sync - ALWAYS saves to both primary and backup storage so data is never lost
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY_EVENTS, JSON.stringify(events));
+      if (events && events.length > 0) {
+        const serialized = JSON.stringify(events);
+        localStorage.setItem(STORAGE_KEY_EVENTS, serialized);
+        localStorage.setItem(STORAGE_KEY_BACKUP, serialized);
+      }
     } catch (e) {
-      console.warn('Could not save events', e);
+      console.warn('Could not save events to permanent storage', e);
     }
   }, [events]);
 
@@ -145,7 +144,7 @@ export default function App() {
     }
   }, [categories]);
 
-  // Push status message banner with auto-hide
+  // Flash status message
   const showBanner = (text: string, type: 'success' | 'error' | 'info' = 'info') => {
     setStatusMessage({ type, text });
     setTimeout(() => {
@@ -170,7 +169,6 @@ export default function App() {
       setToastQueue((prev) => [newNotif, ...prev]);
       soundPlayer.playNotificationChime();
 
-      // Trigger Browser Web Notification if allowed
       if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
         try {
           new Notification(title, {
@@ -199,7 +197,7 @@ export default function App() {
     }
   };
 
-  // Notification interval checker: check every 25 seconds for tasks needing reminder
+  // Check schedule every 25 seconds for reminder
   useEffect(() => {
     const checkSchedule = () => {
       const now = new Date();
@@ -220,7 +218,6 @@ export default function App() {
           const reminderOffset = ev.reminderMinutes ?? 15;
           const triggerTimeMin = taskTotalMin - reminderOffset;
 
-          // If within the trigger minute window
           if (currentTotalMin >= triggerTimeMin && currentTotalMin <= taskTotalMin + 1) {
             hasChanges = true;
             const diff = taskTotalMin - currentTotalMin;
@@ -255,7 +252,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, [triggerNotification]);
 
-  // Sync with Google Calendar
+  // Sync with Google Calendar: MERGE SAFELY WITHOUT DELETING ANY LOCAL TASKS
   const handleFetchGoogleCalendar = useCallback(async () => {
     const token = await getAccessToken();
     if (!token) return;
@@ -270,12 +267,27 @@ export default function App() {
       const gEvents = await fetchGoogleCalendarEvents(dMin.toISOString(), dMax.toISOString());
 
       setEvents((prev) => {
-        // Retain non-Google events (local & github)
-        const nonGoogleEvents = prev.filter((e) => !e.googleCalendarEventId);
-        return [...nonGoogleEvents, ...gEvents];
+        // KEEP ALL existing tasks that do not have a gcal id, or update existing gcal tasks
+        const localOnly = prev.filter((e) => !e.googleCalendarEventId);
+        const existingGcalMap = new Map(prev.filter((e) => e.googleCalendarEventId).map((e) => [e.googleCalendarEventId, e]));
+
+        // Merge incoming gcal events, preserving completed status if already checked off by user
+        const mergedGcal = gEvents.map((ge) => {
+          const matched = ge.googleCalendarEventId ? existingGcalMap.get(ge.googleCalendarEventId) : null;
+          if (matched) {
+            return {
+              ...ge,
+              category: matched.category || ge.category,
+              isCompleted: matched.isCompleted,
+            };
+          }
+          return ge;
+        });
+
+        return [...localOnly, ...mergedGcal];
       });
 
-      showBanner(`ซิงค์ตารางงานจาก Google Calendar สำเร็จ (${gEvents.length} รายการ)`, 'success');
+      showBanner(`ซิงค์ตารางงาน Google: ${PERMANENT_GOOGLE_EMAIL} สำเร็จ (${gEvents.length} รายการ)`, 'success');
     } catch (err: unknown) {
       console.error('Error fetching Google Calendar:', err);
       showBanner(err instanceof Error ? err.message : 'ซิงค์กับ Google Calendar ไม่สำเร็จ', 'error');
@@ -298,105 +310,31 @@ export default function App() {
     return () => unsubscribe();
   }, [handleFetchGoogleCalendar]);
 
-  // Google Login / Logout
-  const handleLogin = async () => {
-    setIsLoggingIn(true);
-    try {
-      const result = await googleSignIn();
-      if (result) {
-        setUser(result.user);
-        triggerNotification('เชื่อมต่อ Google Calendar เรียบร้อย 🎉', `ยินดีต้อนรับคุณ ${result.user.displayName || 'แบงค์'}`, 'sync');
-        await handleFetchGoogleCalendar();
+  // Google Login or Sync
+  const handleLoginOrSync = async () => {
+    const token = await getAccessToken();
+    if (token) {
+      // If already has token, simply refresh and sync
+      await handleFetchGoogleCalendar();
+    } else {
+      setIsLoggingIn(true);
+      try {
+        const result = await googleSignIn();
+        if (result) {
+          setUser(result.user);
+          triggerNotification(
+            'เชื่อมต่อ Google Calendar เรียบร้อยถาวร 🎉',
+            `เชื่อมต่อกับบัญชี ${PERMANENT_GOOGLE_EMAIL} สำเร็จ`,
+            'sync'
+          );
+          await handleFetchGoogleCalendar();
+        }
+      } catch (err: unknown) {
+        console.error('Login error', err);
+        showBanner(err instanceof Error ? err.message : 'เข้าสู่ระบบด้วย Google ไม่สำเร็จ', 'error');
+      } finally {
+        setIsLoggingIn(false);
       }
-    } catch (err: unknown) {
-      console.error('Login error', err);
-      showBanner(err instanceof Error ? err.message : 'เข้าสู่ระบบด้วย Google ไม่สำเร็จ', 'error');
-    } finally {
-      setIsLoggingIn(false);
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      await logout();
-      setUser(null);
-      showBanner('ออกจากระบบ Google แล้ว (ข้อมูลในเครื่องยังคงอยู่)', 'info');
-    } catch (err) {
-      console.error('Logout error', err);
-    }
-  };
-
-  // GitHub Connection Handlers
-  const handleConnectGitHubUsernameOrToken = async (input: string, isToken: boolean) => {
-    setIsSyncingGitHub(true);
-    try {
-      const { account, events: ghEvents } = await connectGitHubByUsernameOrToken(input, isToken);
-      setGithubAccount(account);
-
-      // Merge GitHub events
-      setEvents((prev) => {
-        const withoutOldGh = prev.filter((e) => !e.isGithubSynced);
-        return [...withoutOldGh, ...ghEvents];
-      });
-
-      triggerNotification(
-        'เชื่อมต่อกับ GitHub สำเร็จ! 🐙',
-        `ดึงข้อมูล ${ghEvents.length} รายการของ @${account.username} ลงปฏิทินงานของอ้วน ๆ แล้ว`,
-        'github'
-      );
-      showBanner(`เชื่อมต่อ GitHub: @${account.username} เรียบร้อย`, 'success');
-    } catch (err: unknown) {
-      console.error('GitHub connect error:', err);
-      throw err;
-    } finally {
-      setIsSyncingGitHub(false);
-    }
-  };
-
-  const handleConnectGitHubViaFirebase = async () => {
-    setIsSyncingGitHub(true);
-    try {
-      const { account, events: ghEvents } = await connectGitHubViaFirebase();
-      setGithubAccount(account);
-      setEvents((prev) => {
-        const withoutOldGh = prev.filter((e) => !e.isGithubSynced);
-        return [...withoutOldGh, ...ghEvents];
-      });
-      triggerNotification('เชื่อมต่อ GitHub สำเร็จ! 🐙', `ดึงงานของ @${account.username} เรียบร้อย`, 'github');
-      showBanner(`เชื่อมต่อ GitHub: @${account.username} เรียบร้อย`, 'success');
-    } catch (err: unknown) {
-      console.error('GitHub oauth error:', err);
-      throw err;
-    } finally {
-      setIsSyncingGitHub(false);
-    }
-  };
-
-  const handleDisconnectGitHub = () => {
-    saveStoredGitHubAccount(null);
-    setGithubAccount(null);
-    setEvents((prev) => prev.filter((e) => !e.isGithubSynced));
-    showBanner('ยกเลิกการเชื่อมต่อกับ GitHub แล้ว', 'info');
-  };
-
-  const handleResyncGitHub = async () => {
-    if (!githubAccount) return;
-    setIsSyncingGitHub(true);
-    try {
-      const identifier = githubAccount.token || githubAccount.username;
-      const isToken = !!githubAccount.token;
-      const { account, events: ghEvents } = await connectGitHubByUsernameOrToken(identifier, isToken);
-      setGithubAccount(account);
-      setEvents((prev) => {
-        const withoutOldGh = prev.filter((e) => !e.isGithubSynced);
-        return [...withoutOldGh, ...ghEvents];
-      });
-      showBanner(`อัปเดตกิจกรรม GitHub เรียบร้อย (${ghEvents.length} รายการ)`, 'success');
-    } catch (err: unknown) {
-      console.error('GitHub resync error:', err);
-      showBanner(err instanceof Error ? err.message : 'ซิงค์ข้อมูล GitHub ไม่สำเร็จ', 'error');
-    } finally {
-      setIsSyncingGitHub(false);
     }
   };
 
@@ -550,12 +488,12 @@ export default function App() {
     );
   };
 
-  // Open destructive delete confirmation modal
+  // Open delete confirmation modal
   const handlePromptDelete = (event: CalendarEvent) => {
     setDeleteModalEvent(event);
   };
 
-  // Confirm delete (Destructive operation)
+  // Confirm delete (Individual item delete only, protected)
   const handleConfirmDelete = async () => {
     if (!deleteModalEvent) return;
 
@@ -605,19 +543,15 @@ export default function App() {
         onOpenNotificationCenter={() => setIsNotificationDrawerOpen(true)}
       />
 
-      {/* Main Header */}
+      {/* Main Header with Permanent Google Account 465125@wsk.ac.th */}
       <Header
         user={user}
         isLoggingIn={isLoggingIn}
-        onLogin={handleLogin}
-        onLogout={handleLogout}
+        onLoginOrSync={handleLoginOrSync}
         onOpenNewEvent={() => handleOpenNewEventWithDate(selectedDate)}
         onOpenNotifications={() => setIsNotificationDrawerOpen(true)}
         unreadNotificationsCount={notifications.filter((n) => !n.read).length}
-        onRefreshGoogleCalendar={handleFetchGoogleCalendar}
         isRefreshingGoogle={isRefreshingGoogle}
-        githubAccount={githubAccount}
-        onOpenGitHubModal={() => setIsGitHubModalOpen(true)}
         onOpenCategoryModal={() => setIsCategoryModalOpen(true)}
       />
 
@@ -662,12 +596,13 @@ export default function App() {
                   <Cloud className="w-3.5 h-3.5 text-white" />
                   ตารางงานสดใสของอ้วน ๆ
                 </span>
-                <span className="text-sky-100 text-xs hidden sm:inline">
-                  • สโมสรฯ | เรียน | ยุวชน | w//คุณภรรยา | สอบ | งานสอน
+                <span className="text-sky-100 text-xs hidden sm:inline flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3 inline text-emerald-300" />
+                  Google Calendar: {PERMANENT_GOOGLE_EMAIL} (ถาวร)
                 </span>
               </div>
               <h2 className="text-xl sm:text-2xl font-black tracking-tight">
-                สวัสดี {user?.displayName ? `คุณ ${user.displayName}` : 'แบงค์ (อ้วน ๆ) 💙'}
+                สวัสดี แบงค์ (อ้วน ๆ) 💙
               </h2>
               <p className="text-xs sm:text-sm text-sky-100 mt-1 max-w-xl">
                 {nextTaskToday ? (
@@ -677,7 +612,7 @@ export default function App() {
                   </span>
                 ) : (
                   <span>
-                    วันนี้คุณมีกำหนดการ {events.filter((e) => e.date === todayStr).length} งาน (เสร็จแล้ว {events.filter((e) => e.date === todayStr && e.isCompleted).length} งาน) ขอให้เป็นวันที่สดใสและเต็มไปด้วยพลังบวกนะ! 🌤️
+                    วันนี้คุณมีกำหนดการ {events.filter((e) => e.date === todayStr).length} งาน (เสร็จแล้ว {events.filter((e) => e.date === todayStr && e.isCompleted).length} งาน) ข้อมูลถูกบันทึกและเชื่อมต่อถาวรเรียบร้อยครับ 🌤️
                   </span>
                 )}
               </p>
@@ -746,18 +681,18 @@ export default function App() {
               />
             )}
 
-            {/* Quick Info Strip */}
+            {/* Permanent Storage & Sync Safeguard Notice */}
             <div className="p-4 rounded-3xl bg-white/80 border border-sky-100 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-slate-600">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-sky-100 text-sky-600 flex items-center justify-center shrink-0">
-                  <Sparkles className="w-4 h-4" />
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
                 </div>
                 <div>
                   <p className="font-bold text-slate-800">
-                    เชื่อมต่อ 2 แพลตฟอร์ม: Google Calendar & GitHub 🐙
+                    ข้อมูลเชื่อมต่อถาวรกับ Google: {PERMANENT_GOOGLE_EMAIL} 🔒
                   </p>
                   <p className="text-slate-500">
-                    {githubAccount ? `เชื่อมต่อกับ GitHub (@${githubAccount.username}) แล้ว` : 'สามารถเชื่อมต่อ GitHub เพื่อดึง Issues & คอมมิตงาน'}
+                    ระบบบันทึกตารางงานถาวรป้องกันการสูญหาย พร้อมระบบแจ้งเตือนเสียงเตือนล่วงหน้า
                   </p>
                 </div>
               </div>
@@ -804,7 +739,7 @@ export default function App() {
       {/* Footer */}
       <footer className="mt-auto border-t border-sky-100 bg-white/60 py-4 text-center text-xs text-slate-400">
         <p>
-          ปฏิทินงานของอ้วน ๆ • ปฏิทินงานของแบงค์ โทนสีฟ้าสดใส ☁️💙 เชื่อมต่อ Google Calendar & GitHub พร้อมระบบแจ้งเตือน
+          ปฏิทินงานของอ้วน ๆ • ปฏิทินงานของแบงค์ ({PERMANENT_GOOGLE_EMAIL}) โทนสีฟ้าสดใส ☁️💙 เชื่อมต่อ Google Calendar ถาวร
         </p>
       </footer>
 
@@ -820,7 +755,7 @@ export default function App() {
         onOpenCategoryModal={() => setIsCategoryModalOpen(true)}
       />
 
-      {/* Delete Confirmation Modal (Destructive operation) */}
+      {/* Delete Confirmation Modal */}
       <DeleteConfirmModal
         isOpen={!!deleteModalEvent}
         event={deleteModalEvent}
@@ -836,18 +771,6 @@ export default function App() {
         categories={categories}
         onAddCategory={handleAddCategory}
         onDeleteCategory={handleDeleteCategory}
-      />
-
-      {/* GitHub Connect Modal */}
-      <GitHubModal
-        isOpen={isGitHubModalOpen}
-        onClose={() => setIsGitHubModalOpen(false)}
-        githubAccount={githubAccount}
-        onConnectUsernameOrToken={handleConnectGitHubUsernameOrToken}
-        onConnectViaFirebase={handleConnectGitHubViaFirebase}
-        onDisconnect={handleDisconnectGitHub}
-        onResync={handleResyncGitHub}
-        isSyncing={isSyncingGitHub}
       />
 
       {/* Notification Center Drawer */}

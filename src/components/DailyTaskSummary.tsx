@@ -7,11 +7,9 @@ import {
   Plus,
   Edit3,
   Trash2,
-  ExternalLink,
   MapPin,
   Sparkles,
-  Smile,
-  Github
+  Smile
 } from 'lucide-react';
 import { CalendarEvent, TaskCategoryConfig } from '../types/calendar';
 import { formatThaiDate, getTodayStr } from '../constants/calendar';
@@ -49,7 +47,6 @@ export const DailyTaskSummary: React.FC<Props> = ({
   const dayEvents = events
     .filter((e) => e.date === selectedDate)
     .sort((a, b) => {
-      // Incomplete first, then by time
       if (a.isCompleted !== b.isCompleted) {
         return a.isCompleted ? 1 : -1;
       }
@@ -232,16 +229,8 @@ export const DailyTaskSummary: React.FC<Props> = ({
 
                     {/* Google Sync Badge */}
                     {event.isGoogleSynced && (
-                      <span className="text-[10px] text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded font-medium flex items-center gap-1" title="เชื่อมต่อกับ Google Calendar">
+                      <span className="text-[10px] text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded font-medium flex items-center gap-1" title="เชื่อมต่อกับ Google Calendar (465125@wsk.ac.th)">
                         <span>G-Cal</span>
-                      </span>
-                    )}
-
-                    {/* GitHub Sync Badge */}
-                    {event.isGithubSynced && (
-                      <span className="text-[10px] text-slate-700 bg-slate-100 border border-slate-300 px-1.5 py-0.5 rounded font-bold flex items-center gap-1">
-                        <Github className="w-2.5 h-2.5" />
-                        <span>GitHub</span>
                       </span>
                     )}
                   </div>
@@ -260,19 +249,7 @@ export const DailyTaskSummary: React.FC<Props> = ({
                     </p>
                   )}
 
-                  {event.githubUrl && (
-                    <a
-                      href={event.githubUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-sky-600 hover:text-sky-800 underline mt-1 inline-flex items-center gap-1 font-medium"
-                    >
-                      <span>เปิดดูใน GitHub</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
-                  )}
-
-                  {event.location && !event.githubUrl && (
+                  {event.location && (
                     <p className="text-xs text-sky-600 mt-1 flex items-center gap-1 truncate">
                       <MapPin className="w-3 h-3 shrink-0" />
                       <span>{event.location}</span>

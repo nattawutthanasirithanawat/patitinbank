@@ -22,9 +22,6 @@ export interface CalendarEvent {
   isCompleted: boolean;
   googleCalendarEventId?: string; // ID if synced with Google Calendar
   isGoogleSynced?: boolean;
-  githubIssueId?: number; // ID if synced from GitHub
-  githubUrl?: string;
-  isGithubSynced?: boolean;
   location?: string;
   reminderMinutes: number; // e.g. 0, 10, 30, 60
   reminded?: boolean;
@@ -38,14 +35,5 @@ export interface AppNotification {
   message: string;
   timestamp: number;
   read: boolean;
-  type: 'urgent' | 'reminder' | 'sync' | 'info' | 'github';
-}
-
-export interface GitHubAccount {
-  username: string;
-  avatarUrl: string;
-  name: string;
-  token?: string;
-  connectedAt: number;
-  syncedIssuesCount: number;
+  type: 'urgent' | 'reminder' | 'sync' | 'info';
 }
