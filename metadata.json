@@ -1,0 +1,6 @@
+{
+  "name": "ปฏิทินงานของอ้วน ๆ",
+  "description": "ระบบปฏิทินงาน จัดการกำหนดการ เพิ่ม/แก้ไข/ลบงาน เชื่อมต่อกับ Google Calendar พร้อมระบบแจ้งเตือน โทนสีฟ้าสดใส",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
